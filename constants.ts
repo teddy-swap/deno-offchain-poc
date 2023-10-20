@@ -1,0 +1,1 @@
+export const MAX_LP_CAP = 9223372036854775807n;
