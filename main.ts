@@ -3,7 +3,7 @@ import { Blockfrost, Data, Lucid, OutRef, UTxO, fromText } from "https://deno.la
 import { config } from "https://deno.land/x/dotenv@v3.2.2/mod.ts";
 import { burnAdaPoolTokenSetAsync, createMintPolicyWithAddress, getPolicyId, mintAdaPoolTokenSetAsync } from "./asset.ts";
 import { PoolTokenSet, createAdaPool, createScriptReferenceAsync, createSwapOrder, executeSwapOrderAsync, extractTokenInfo, findPoolData, poolValidatorAddress, poolValidatorScript, submitSwapOrderAsync, swapValidatorAddress, swapValidatorScript } from "./validator.ts";
-import { TestDatum } from "./datum.ts";
+import { SwapDatum, TestDatum } from "./datum.ts";
 
 const env = config();
 
@@ -128,12 +128,16 @@ if (Deno.args.includes("--swap-order")) {
     amount,
     2000000n,
     2000000n,
-    20,
+    BigInt(20),
     poolDatum!,
     poolUtxo.assets,
     pkh!,
     skh!,
+    ["", ""]
   );
+
+  // console.log({swapDatum});
+  // console.log("Swap Datum Cbor", Data.to<SwapDatum>(swapDatum, SwapDatum));
 
   console.log("SwapOrder: ", swapDatum, minAda);
   console.log("Submitting Swap Order");

@@ -83,121 +83,81 @@ export const createAdaPool = async (
     return txHash;
 };
 
+const createSwapDatum = (
+    baseAsset: [string, string],
+    quoteAsset: [string, string],
+    poolDatum: PoolDatum,
+    exFeePerTokenNum: bigint,
+    exFeePerTokenDen: bigint,
+    rewardPkh: string,
+    stakePkh: string | null,
+    baseAmount: bigint,
+    minQuoteAmount: bigint
+): SwapDatum => ({
+    base: baseAsset,
+    quote: quoteAsset,
+    poolNft: poolDatum.poolNft,
+    feeNum: poolDatum.feeNum,
+    exFeePerTokenNum,
+    exFeePerTokenDen,
+    rewardPkh,
+    stakePkh,
+    baseAmount,
+    minQuoteAmount,
+});
 
 export const createSwapOrder = (
     baseIsAda: boolean,
     baseAmount: bigint,
     collateralAda: bigint,
     minExFee: bigint,
-    slippage = 3,
+    slippage: bigint,
     poolDatum: PoolDatum,
     poolValue: Assets,
     rewardPkh: string,
     stakePkh: string | null,
-    baseAsset = ["", ""],
+    baseAsset: [string, string],
 ): [SwapDatum, bigint] => {
-    const noAdaPair = poolDatum.poolX[0] !== "" && poolDatum.poolY[0] !== "";
-    const x = poolDatum.poolX;
-    const y = poolDatum.poolY;
     const feeDen = 1000n;
     const exFeePerTokenDen = 1000000000000000n;
 
-    if (!noAdaPair) {
-        const baseAsset = baseIsAda
-            ? ["", ""]
-            : [x, y].find((asset) => asset[0] !== "");
-        const quoteAsset = baseIsAda
-            ? [x, y].find((asset) => asset[0] !== "")
-            : ["", ""];
-        const reservesBase = poolValue[
-            baseIsAda ? "lovelace" : baseAsset![0].concat(baseAsset![1]).toLowerCase()
-        ];
-        const reservesQuote = poolValue[
-            baseIsAda
-                ? quoteAsset![0].concat(quoteAsset![1]).toLowerCase()
-                : "lovelace"
-        ];
-        const correctOutput = calculateCorrectOutput(
-            baseAmount,
-            reservesBase,
-            reservesQuote,
-            poolDatum.feeNum,
-            feeDen,
-        );
-        const slippageFactor = BigInt(100 - slippage);
-        const minQuoteAmount = (correctOutput * slippageFactor) / 100n;
-        console.log({ minQuoteAmount });
-        const exFeePerTokenNum = (minExFee * exFeePerTokenDen) / BigInt(minQuoteAmount);
-        // 874388034668901944
-        // 5 ADA total input -> 1 ADA baseAmount -> 2 ADA nitro/executor Fee -> 2 ADA collateral
-        // exFee = 2 ADA
-        //  ======= minimum 10 TEDY <- 1.8 ADA + 10 TEDY 4 ADA
-        // nft -> 100 0.3
-        console.log({ exFeePerTokenNum });
-        /*
-            const poolDatum: PoolDatum = {
-                poolNft: [extractedTokenSet.lp.policyId, fromText(extractedTokenSet.lp.tokenName)],
-                poolX: ["", ""],
-                poolY: [extractedTokenSet.native.policyId, fromText(extractedTokenSet.native.tokenName)],
-                poolLq: [extractedTokenSet.lp.policyId, fromText(extractedTokenSet.lp.tokenName)],
-                feeNum: 995n,
-                stakeAdminPolicy: [stakeAdminPolicyId],
-                lqBound: 0n
-            };
-        */
-        const swapDatum: SwapDatum = {
-            base: [baseAsset![0], baseAsset![1]],
-            quote: [quoteAsset![0], quoteAsset![1]],
-            poolNft: poolDatum.poolNft,
-            feeNum: poolDatum.feeNum,
-            exFeePerTokenNum,
-            exFeePerTokenDen,
-            rewardPkh,
-            stakePkh,
-            baseAmount,
-            minQuoteAmount: minQuoteAmount,
-        };
-        const minAda = baseIsAda
-            ? baseAmount + minExFee + collateralAda
-            : minExFee + collateralAda;
-        console.log({ swapDatum, minAda });
-        return [swapDatum, minAda];
-    } else {
-        const baseAssetStr = baseAsset[0].concat(baseAsset[1]).toLowerCase();
-        const quoteAsset = [x, y].find((asset) =>
-            asset[0].concat(asset[1]).toLowerCase() !== baseAssetStr
-        );
-        const reservesBase = poolValue[baseAssetStr];
-        const reservesQuote =
-            poolValue[quoteAsset![0].concat(quoteAsset![1]).toLowerCase()];
-        const correctOutput = calculateCorrectOutput(
-            baseAmount,
-            reservesBase,
-            reservesQuote,
-            poolDatum.feeNum,
-            feeDen,
-        );
-        const slippageFactor = BigInt(100 - slippage);
-        const minQuoteAmount = (correctOutput * slippageFactor) / 100n;
-        console.log({ minQuoteAmount });
-        const exFeePerTokenNum = (minExFee * exFeePerTokenDen) / BigInt(minQuoteAmount);
-        const swapDatum: SwapDatum = {
-            base: [baseAsset![0], baseAsset![1]],
-            quote: [quoteAsset![0], quoteAsset![1]],
-            poolNft: poolDatum.poolNft,
-            feeNum: poolDatum.feeNum,
-            exFeePerTokenNum,
-            exFeePerTokenDen,
-            rewardPkh,
-            stakePkh,
-            baseAmount,
-            minQuoteAmount: minQuoteAmount,
-        };
-        const minAda = minExFee + collateralAda;
-        return [swapDatum, minAda];
-    }
+    const baseAssetStr = baseIsAda ? "lovelace" : baseAsset[0].concat(baseAsset[1]).toLowerCase();
+    const quoteAssetStr = baseIsAda ? poolDatum.poolY[0].concat(poolDatum.poolY[1]).toLowerCase() : "lovelace";
+    const reservesBase = poolValue[baseAssetStr];
+    const reservesQuote = poolValue[quoteAssetStr];
+
+    const correctOutput = calculateCorrectOutput(
+        baseAmount,
+        reservesBase,
+        reservesQuote,
+        poolDatum.feeNum,
+        feeDen,
+    );
+    const slippageFactor = BigInt(100) - slippage;
+    const minQuoteAmount = (correctOutput * slippageFactor) / BigInt(100);
+    const exFeePerTokenNum = (minExFee * exFeePerTokenDen) / minQuoteAmount;
+
+    const swapDatum = createSwapDatum(
+        baseAsset,
+        [poolDatum.poolY[0], poolDatum.poolY[1]],
+        poolDatum,
+        exFeePerTokenNum,
+        exFeePerTokenDen,
+        rewardPkh,
+        stakePkh,
+        baseAmount,
+        minQuoteAmount
+    );
+
+    const minAda = baseIsAda ? baseAmount + minExFee + collateralAda : minExFee + collateralAda;
+
+    return [swapDatum, minAda];
 };
 
+/*
+AMM Formula
+output = (input * reserves_quote * fee_num) / (reserves_base * fee_den + input * fee_num)
+*/
 export const calculateCorrectOutput = (
     baseAmount: bigint,
     reservesBase: bigint,
@@ -309,7 +269,6 @@ export const submitSwapOrderAsync = async (
 
     return txHash;
 };
-
 
 export const executeSwapOrderAsync = async (
     lucid: Lucid,
@@ -426,7 +385,7 @@ export const executeSwapOrderAsync = async (
         const orderRedeemer: string = Data.to(
             new Constr(0, [poolIndex, swapIndex, 1n, swapAction]),
         );
-        console.log({poolAssets, poolRefScriptUtxo, swapRefScriptUtxo});
+        console.log({ poolAssets, poolRefScriptUtxo, swapRefScriptUtxo });
         // create and submit tx
         const tx = lucid.newTx()
             .readFrom([poolRefScriptUtxo])
@@ -456,7 +415,7 @@ export const executeSwapOrderAsync = async (
 
         await lucid.awaitTx(txHash);
         console.log("Execute Swap Order Confirmed", txHash);
-        
+
         const newPoolState: {
             poolOutRef: OutRef;
             nft: AssetClassType;
@@ -586,7 +545,7 @@ export const executeSwapOrderAsync = async (
         console.log("Submitting Execute Swap Order");
         const signedTx = await finalTx.sign().complete();
         const txHash = await signedTx.submit();
-        
+
         await lucid.awaitTx(txHash);
         console.log("Execute Swap Order Confirmed", txHash);
 
