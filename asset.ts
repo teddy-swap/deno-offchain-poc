@@ -48,8 +48,6 @@ export const mintAdaPoolTokenSetAsync = async (lucid: Lucid, changeAddr: string,
     const IDENTITY_TOKEN_NAME = `ADA_${tokenName}_IDENTITY`;
     const TOKEN_NAME = tokenName;
     const mintPolicy = createMintPolicyWithAddress(lucid, changeAddr);
-    const LP_UNIT = getPolicyId(lucid, mintPolicy) + fromText(LP_TOKEN_NAME);
-    const IDENTITY_UNIT = getPolicyId(lucid, mintPolicy) + fromText(IDENTITY_TOKEN_NAME);
     const POLICT_ID = getPolicyId(lucid, mintPolicy);
 
     console.log(`Minting ADA_${tokenName}_LP, waiting for confirmation...`);

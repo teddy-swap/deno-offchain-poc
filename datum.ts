@@ -77,3 +77,5 @@ export type RedeemDatum = Data.Static<typeof RedeemDatumSchema>;
 export type AssetClassType = Data.Static<typeof AssetClassSchema>;
 
 export const PoolDatum = PoolDatumSchema as unknown as PoolDatum;
+export const SwapDatum = SwapDatumSchema as unknown as SwapDatum;
+
