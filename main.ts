@@ -1,9 +1,8 @@
 // deno-lint-ignore-file no-explicit-any
-import { Blockfrost, Data, Lucid, OutRef, UTxO, fromText } from "https://deno.land/x/lucid@0.10.7/mod.ts"
+import { Blockfrost, Lucid, OutRef, UTxO, fromText } from "https://deno.land/x/lucid@0.10.7/mod.ts"
 import { config } from "https://deno.land/x/dotenv@v3.2.2/mod.ts";
 import { burnAdaPoolTokenSetAsync, createMintPolicyWithAddress, getPolicyId, mintAdaPoolTokenSetAsync } from "./asset.ts";
-import { PoolTokenSet, createAdaPool, createScriptReferenceAsync, createSwapOrder, executeSwapOrderAsync, extractTokenInfo, findPoolData, poolValidatorAddress, poolValidatorScript, submitSwapOrderAsync, swapValidatorAddress, swapValidatorScript } from "./validator.ts";
-import { SwapDatum, TestDatum } from "./datum.ts";
+import { PoolTokenSet, createAdaPool, createScriptReferenceAsync, createSwapOrder, depositValidatorScript, executeSwapOrderAsync, extractTokenInfo, findPoolData, poolValidatorAddress, poolValidatorScript, redeemValidatorScript, submitSwapOrderAsync, swapValidatorAddress, swapValidatorScript } from "./validator.ts";
 
 const env = config();
 
@@ -91,6 +90,26 @@ if (Deno.args.includes("--create-swap-reference")) {
   const data = encoder.encode(toJson(scriptRefUtxo));
   await Deno.mkdir("script_reference", { recursive: true });
   await Deno.writeFile(`script_reference/swap_script_ref.json`, data);
+}
+
+if (Deno.args.includes("--create-deposit-reference")) {
+  const scriptRefUtxo = await createScriptReferenceAsync(lucid, depositValidatorScript);
+  console.log("Script Reference Utxo", scriptRefUtxo);
+  // Write the result as json file
+  const encoder = new TextEncoder();
+  const data = encoder.encode(toJson(scriptRefUtxo));
+  await Deno.mkdir("script_reference", { recursive: true });
+  await Deno.writeFile(`script_reference/deposit_script_ref.json`, data);
+}
+
+if (Deno.args.includes("--create-redeem-reference")) {
+  const scriptRefUtxo = await createScriptReferenceAsync(lucid, redeemValidatorScript);
+  console.log("Script Reference Utxo", scriptRefUtxo);
+  // Write the result as json file
+  const encoder = new TextEncoder();
+  const data = encoder.encode(toJson(scriptRefUtxo));
+  await Deno.mkdir("script_reference", { recursive: true });
+  await Deno.writeFile(`script_reference/redeem_script_ref.json`, data);
 }
 
 if (Deno.args.includes("--create-pool")) {

@@ -4,6 +4,8 @@ import { AssetClassType, PoolDatum, SwapDatum } from "./datum.ts";
 
 import poolValidator from "./scripts/pool.json" with { type: "json" };
 import swapValidator from "./scripts/swap.json" with { type: "json" };
+import depositValidator from "./scripts/deposit.json" with { type: "json" };
+import redeemValidator from "./scripts/redeem.json" with { type: "json" };
 
 export const poolValidatorScript = {
     type: "PlutusV2" as ScriptType,
@@ -13,6 +15,16 @@ export const poolValidatorScript = {
 export const swapValidatorScript = {
     type: "PlutusV2" as ScriptType,
     script: swapValidator.cborHex,
+};
+
+export const depositValidatorScript = {
+    type: "PlutusV2" as ScriptType,
+    script: depositValidator.cborHex,
+};
+
+export const redeemValidatorScript = {
+    type: "PlutusV2" as ScriptType,
+    script: redeemValidator.cborHex,
 };
 
 export type PoolTokenSet = { [key: string]: bigint };
@@ -37,9 +49,9 @@ export const createAdaPool = async (
         .collectFrom(utxos);
 
     const extractedTokenSet = extractTokenInfo(poolTokenSet);
-
+    console.log({extractedTokenSet});
     const poolDatum: PoolDatum = {
-        poolNft: [extractedTokenSet.lp.policyId, fromText(extractedTokenSet.lp.tokenName)],
+        poolNft: [extractedTokenSet.lp.policyId, fromText(extractedTokenSet.identity.tokenName)],
         poolX: ["", ""],
         poolY: [extractedTokenSet.native.policyId, fromText(extractedTokenSet.native.tokenName)],
         poolLq: [extractedTokenSet.lp.policyId, fromText(extractedTokenSet.lp.tokenName)],
