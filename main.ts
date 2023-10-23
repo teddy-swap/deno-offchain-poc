@@ -195,3 +195,35 @@ if (Deno.args.includes("--execute-swap-order")) {
   console.log("PoolData", { scriptRef, poolUtxo, poolDatum });
   await executeSwapOrderAsync(lucid, poolAddr, poolUtxo, poolDatum!, swapOrderUtxos[0], scriptRef, swapScriptRef[0], changeAddr, changeAddr, false);
 }
+
+if (Deno.args.includes("--refund-swap-order")) {
+  const swapOrderUtxoStr = Deno.args[Deno.args.indexOf("--refund-swap-order") + 1];
+
+  const swapOrderUtxos = await lucid.provider.getUtxosByOutRef([{
+    txHash: swapOrderUtxoStr.split("#")[0],
+    outputIndex: parseInt(swapOrderUtxoStr.split("#")[1]),
+  }]);
+
+  console.log("SwapOrderUtxo", swapOrderUtxos[0]);
+
+  const poolToken = Deno.args[Deno.args.indexOf("--refund-swap-order") + 2];
+
+  const poolData = await Deno.readFile(`pools/${poolToken}_pool.json`);
+  const poolTokenSet = fromJson(new TextDecoder().decode(poolData)) as PoolTokenSet;
+  const poolTokenInfo = extractTokenInfo(poolTokenSet);
+
+  const poolTokenIdentity = poolTokenInfo.identity.policyId + fromText(poolTokenInfo.identity.tokenName);
+
+  const poolScriptRefData = await Deno.readFile(`script_reference/pool_script_ref.json`);
+  const poolScriptRefObj = fromJson(new TextDecoder().decode(poolScriptRefData)) as OutRef;
+
+  const swapScriptRefData = await Deno.readFile(`script_reference/swap_script_ref.json`);
+  const swapScriptRefObj = fromJson(new TextDecoder().decode(swapScriptRefData)) as UTxO;
+  const swapScriptRef = await lucid.provider.getUtxosByOutRef([swapScriptRefObj]);
+
+  const poolAddr = poolValidatorAddress(lucid);
+  const [scriptRef, poolUtxo, poolDatum] = await findPoolData(lucid, poolAddr, poolTokenIdentity, poolScriptRefObj);
+
+  console.log("PoolData", { scriptRef, poolUtxo, poolDatum });
+  await executeSwapOrderAsync(lucid, poolAddr, poolUtxo, poolDatum!, swapOrderUtxos[0], scriptRef, swapScriptRef[0], changeAddr, changeAddr, true);
+}
