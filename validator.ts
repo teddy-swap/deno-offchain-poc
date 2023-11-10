@@ -49,7 +49,7 @@ export const createAdaPool = async (
         .collectFrom(utxos);
 
     const extractedTokenSet = extractTokenInfo(poolTokenSet);
-    console.log({extractedTokenSet});
+    console.log({ extractedTokenSet });
     const poolDatum: PoolDatum = {
         poolNft: [extractedTokenSet.lp.policyId, fromText(extractedTokenSet.identity.tokenName)],
         poolX: ["", ""],
@@ -210,7 +210,7 @@ export const findPoolData = async (
     try {
         poolDatum = Data.from<PoolDatum>(poolUtxo.datum || "", PoolDatum);
     } catch (err) {
-        console.log("pool utxo not found", err);
+        console.log("pool utxo not found", poolAddr, poolNft.toLowerCase(), err);
     }
     return [poolVRefScriptUtxo[0], poolUtxo, poolDatum];
 };
@@ -412,7 +412,6 @@ export const executeSwapOrderAsync = async (
         if (isRefund) {
             tx.addSigner(rewardAddress);
         }
-
         const finalTx = await tx.complete({
             change: {
                 address: changeAddress,
@@ -420,11 +419,10 @@ export const executeSwapOrderAsync = async (
             coinSelection: false,
             nativeUplc: false,
         });
-
-        console.log("Submitting Execute Swap Order");
         const signedTx = await finalTx.sign().complete();
+        console.log("Submitting Execute Swap Order", signedTx.toString());
         const txHash = await signedTx.submit();
-
+        console.log("Tx Hash", txHash);
         await lucid.awaitTx(txHash);
         console.log("Execute Swap Order Confirmed", txHash);
 
@@ -490,8 +488,7 @@ export const executeSwapOrderAsync = async (
             [poolY]: poolYPoolAssetValue,
         };
 
-        // console.log({ roundedCorrectOutput });
-
+        // console.log({ roundedCorrectOutput }); 
         const exFee = correctOutput * swapDatum.exFeePerTokenNum / swapDatum.exFeePerTokenDen;
         const minRewardAda = swapUtxo.assets["lovelace"] - exFee + 100000n; //
 
@@ -554,8 +551,8 @@ export const executeSwapOrderAsync = async (
             nativeUplc: false,
         });
 
-        console.log("Submitting Execute Swap Order");
         const signedTx = await finalTx.sign().complete();
+        console.log("Submitting Execute Swap Order", signedTx.toString());
         const txHash = await signedTx.submit();
 
         await lucid.awaitTx(txHash);
@@ -579,3 +576,20 @@ export const executeSwapOrderAsync = async (
         return [txHash, newPoolState];
     }
 };
+
+export const refundSwapOrderAsync = async (lucid: Lucid, swapOrderUtxo: UTxO, swapRefScriptUtxo: UTxO, refundAddress: string) => {
+    const redemeer = Data.to(new Constr(0, [0n, 0n, 0n, 1n]));
+    const tx = await lucid
+        .newTx()
+        .readFrom([swapRefScriptUtxo])
+        .collectFrom([swapOrderUtxo], redemeer)
+        .addSigner(refundAddress)
+        .complete();
+
+    const signedTx = await tx.sign().complete();
+
+    const txHash = await signedTx.submit();
+    console.log("Refund Swap Order Submitted", txHash);
+    await lucid.awaitTx(txHash);
+    console.log("Refund Swap Order Confirmed", txHash);
+}

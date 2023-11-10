@@ -2,7 +2,7 @@
 import { Blockfrost, Lucid, OutRef, UTxO, fromText } from "https://deno.land/x/lucid@0.10.7/mod.ts"
 import { config } from "https://deno.land/x/dotenv@v3.2.2/mod.ts";
 import { burnAdaPoolTokenSetAsync, createMintPolicyWithAddress, getPolicyId, mintAdaPoolTokenSetAsync } from "./asset.ts";
-import { PoolTokenSet, createAdaPool, createScriptReferenceAsync, createSwapOrder, depositValidatorScript, executeSwapOrderAsync, extractTokenInfo, findPoolData, poolValidatorAddress, poolValidatorScript, redeemValidatorScript, submitSwapOrderAsync, swapValidatorAddress, swapValidatorScript } from "./validator.ts";
+import { PoolTokenSet, createAdaPool, createScriptReferenceAsync, createSwapOrder, depositValidatorScript, executeSwapOrderAsync, extractTokenInfo, findPoolData, poolValidatorAddress, poolValidatorScript, redeemValidatorScript, refundSwapOrderAsync, submitSwapOrderAsync, swapValidatorAddress, swapValidatorScript } from "./validator.ts";
 
 const env = config();
 
@@ -204,26 +204,12 @@ if (Deno.args.includes("--refund-swap-order")) {
     outputIndex: parseInt(swapOrderUtxoStr.split("#")[1]),
   }]);
 
-  console.log("SwapOrderUtxo", swapOrderUtxos[0]);
-
-  const poolToken = Deno.args[Deno.args.indexOf("--refund-swap-order") + 2];
-
-  const poolData = await Deno.readFile(`pools/${poolToken}_pool.json`);
-  const poolTokenSet = fromJson(new TextDecoder().decode(poolData)) as PoolTokenSet;
-  const poolTokenInfo = extractTokenInfo(poolTokenSet);
-
-  const poolTokenIdentity = poolTokenInfo.identity.policyId + fromText(poolTokenInfo.identity.tokenName);
-
-  const poolScriptRefData = await Deno.readFile(`script_reference/pool_script_ref.json`);
-  const poolScriptRefObj = fromJson(new TextDecoder().decode(poolScriptRefData)) as OutRef;
-
   const swapScriptRefData = await Deno.readFile(`script_reference/swap_script_ref.json`);
   const swapScriptRefObj = fromJson(new TextDecoder().decode(swapScriptRefData)) as UTxO;
   const swapScriptRef = await lucid.provider.getUtxosByOutRef([swapScriptRefObj]);
 
-  const poolAddr = poolValidatorAddress(lucid);
-  const [scriptRef, poolUtxo, poolDatum] = await findPoolData(lucid, poolAddr, poolTokenIdentity, poolScriptRefObj);
+  console.log("SwapOrderUtxo", swapOrderUtxos[0]);
+  console.log("SwapRefUtxo", swapScriptRef[0]);
 
-  console.log("PoolData", { scriptRef, poolUtxo, poolDatum });
-  await executeSwapOrderAsync(lucid, poolAddr, poolUtxo, poolDatum!, swapOrderUtxos[0], scriptRef, swapScriptRef[0], changeAddr, changeAddr, true);
+  await refundSwapOrderAsync(lucid, swapOrderUtxos[0], swapScriptRef[0], changeAddr);
 }
