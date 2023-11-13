@@ -220,8 +220,43 @@ export const findPoolUtxo = async (
     unit: string,
     lucid: Lucid,
 ): Promise<UTxO> => {
-    const utxos: UTxO[] = await lucid.provider.getUtxosWithUnit(poolAddr, unit);
-    return utxos[0];
+    const rawUtxosReq = await fetch('https://preview.koios.rest/api/v1/address_utxos', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            "_addresses": [
+                poolAddr
+            ],
+            "_extended": true
+        })
+    });
+    const rawUtxos = await rawUtxosReq.json();
+    const poolRawUtxo = rawUtxos.filter((utxo: any) => utxo.asset_list.filter((v: any) => unit.startsWith(v.policy_id) && unit.endsWith(v.asset_name)).length > 0)[0];
+    const assets: any = {};
+    poolRawUtxo.asset_list.forEach((v: any) => {
+        const unit = v.policy_id + v.asset_name;
+        const assetName = unit === "" ? "lovelace" : unit;
+        const quantity = BigInt(v.quantity);
+    
+        // Check if the asset already exists in the object, and aggregate the quantities
+        if (assets[assetName]) {
+            assets[assetName] += quantity;
+        } else {
+            assets[assetName] = quantity;
+        }
+    });
+
+    assets["lovelace"] = BigInt(poolRawUtxo.value);
+    
+    return {
+        txHash: poolRawUtxo.tx_hash,
+        outputIndex: poolRawUtxo.tx_index,
+        address: poolRawUtxo.address,
+        datum: poolRawUtxo.inline_datum.bytes,
+        assets
+    } as UTxO;
 };
 
 export const createScriptReferenceAsync = async (lucid: Lucid, validatorScript: Script) => {
@@ -420,7 +455,7 @@ export const executeSwapOrderAsync = async (
             nativeUplc: false,
         });
         const signedTx = await finalTx.sign().complete();
-        console.log("Submitting Execute Swap Order", signedTx.toString());
+        console.log("Submitting Execute Swap Order");
         const txHash = await signedTx.submit();
         console.log("Tx Hash", txHash);
         await lucid.awaitTx(txHash);
@@ -584,7 +619,9 @@ export const refundSwapOrderAsync = async (lucid: Lucid, swapOrderUtxo: UTxO, sw
         .readFrom([swapRefScriptUtxo])
         .collectFrom([swapOrderUtxo], redemeer)
         .addSigner(refundAddress)
-        .complete();
+        .complete({
+            nativeUplc: false
+        });
 
     const signedTx = await tx.sign().complete();
 
