@@ -2,7 +2,7 @@
 import { Blockfrost, Lucid, OutRef, UTxO, fromText } from "https://deno.land/x/lucid@0.10.7/mod.ts"
 import { config } from "https://deno.land/x/dotenv@v3.2.2/mod.ts";
 import { burnAdaPoolTokenSetAsync, createMintPolicyWithAddress, getPolicyId, mintAdaPoolTokenSetAsync } from "./asset.ts";
-import { PoolTokenSet, createAdaPool, createScriptReferenceAsync, createSwapOrder, depositValidatorScript, executeSwapOrderAsync, extractTokenInfo, findPoolData, poolValidatorAddress, poolValidatorScript, redeemValidatorScript, refundSwapOrderAsync, submitSwapOrderAsync, swapValidatorAddress, swapValidatorScript } from "./validator.ts";
+import { PoolTokenSet, attemptHackPoolAsync, createAdaPoolAsync, createScriptReferenceAsync, createSwapOrder, depositValidatorAddress, depositValidatorScript, executeSwapOrderAsync, extractTokenInfo, findPoolData, poolValidatorAddress, poolValidatorScript, redeemValidatorAddress, redeemValidatorScript, refundSwapOrderAsync, submitSwapOrderAsync, swapValidatorAddress, swapValidatorScript } from "./validator.ts";
 
 const env = config();
 
@@ -51,6 +51,13 @@ const fromJson = (data: any) => {
 }
 
 const adminPolicyId = getPolicyId(lucid, createMintPolicyWithAddress(lucid, changeAddr));
+
+const poolAddr = poolValidatorAddress(lucid, lucid.utils.stakeCredentialOf(changeAddr));
+const swapAddr = swapValidatorAddress(lucid, lucid.utils.stakeCredentialOf(changeAddr));
+const depositAddr = depositValidatorAddress(lucid, lucid.utils.stakeCredentialOf(changeAddr));
+const redeemAddr = redeemValidatorAddress(lucid, lucid.utils.stakeCredentialOf(changeAddr));
+
+console.log(JSON.stringify({ changeAddr, poolAddr, swapAddr, depositAddr, redeemAddr }));
 
 if (Deno.args.includes("--mint-pool-token")) {
   const token = Deno.args[Deno.args.indexOf("--mint-pool-token") + 1];
@@ -117,8 +124,7 @@ if (Deno.args.includes("--create-pool")) {
   console.log(`Creating ${token} Pool`);
   const data = await Deno.readFile(`pools/${token}_pool.json`);
   const poolTokenSet = fromJson(new TextDecoder().decode(data));
-  const poolAddr = poolValidatorAddress(lucid);
-  const txHash = await createAdaPool(lucid, poolTokenSet, changeAddr, poolAddr, adminPolicyId);
+  const txHash = await createAdaPoolAsync(lucid, poolTokenSet, changeAddr, poolAddr, adminPolicyId);
   console.log(`Created ${token} Pool`, txHash);
 }
 
@@ -137,8 +143,6 @@ if (Deno.args.includes("--swap-order")) {
   // load pool script reference
   const data2 = await Deno.readFile(`script_reference/pool_script_ref.json`);
   const poolScriptRef = fromJson(new TextDecoder().decode(data2)) as OutRef;
-  const poolAddr = poolValidatorAddress(lucid);
-  const swapAddr = swapValidatorAddress(lucid);
   const [scriptRef, poolUtxo, poolDatum] = await findPoolData(lucid, poolAddr, poolTokenIdentity, poolScriptRef);
   console.log("PoolData", { scriptRef, poolUtxo, poolDatum });
 
@@ -189,7 +193,6 @@ if (Deno.args.includes("--execute-swap-order")) {
   const swapScriptRefObj = fromJson(new TextDecoder().decode(swapScriptRefData)) as UTxO;
   const swapScriptRef = await lucid.provider.getUtxosByOutRef([swapScriptRefObj]);
 
-  const poolAddr = poolValidatorAddress(lucid);
   const [scriptRef, poolUtxo, poolDatum] = await findPoolData(lucid, poolAddr, poolTokenIdentity, poolScriptRefObj);
 
   console.log("PoolData", { scriptRef, poolUtxo, poolDatum });
@@ -212,4 +215,20 @@ if (Deno.args.includes("--refund-swap-order")) {
   console.log("SwapRefUtxo", swapScriptRef[0]);
 
   await refundSwapOrderAsync(lucid, swapOrderUtxos[0], swapScriptRef[0], changeAddr);
+}
+
+if (Deno.args.includes("--hack-pool")) {
+  const poolToken = Deno.args[Deno.args.indexOf("--hack-pool") + 1];
+  const poolData = await Deno.readFile(`pools/${poolToken}_pool.json`);
+  const poolTokenSet = fromJson(new TextDecoder().decode(poolData)) as PoolTokenSet;
+  const poolTokenInfo = extractTokenInfo(poolTokenSet);
+
+  const poolTokenIdentity = poolTokenInfo.identity.policyId + fromText(poolTokenInfo.identity.tokenName);
+
+  const poolScriptRefData = await Deno.readFile(`script_reference/pool_script_ref.json`);
+  const poolScriptRefObj = fromJson(new TextDecoder().decode(poolScriptRefData)) as OutRef;
+
+  const [scriptRef, poolUtxo] = await findPoolData(lucid, poolAddr, poolTokenIdentity, poolScriptRefObj);
+  console.log("PoolData", { scriptRef, poolUtxo });
+  await attemptHackPoolAsync(lucid, scriptRef, poolUtxo, adminPolicyId);
 }

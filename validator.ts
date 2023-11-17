@@ -1,4 +1,4 @@
-import { Assets, Constr, Data, Lucid, OutRef, Script, ScriptType, UTxO, fromText } from "https://deno.land/x/lucid@0.10.7/mod.ts"
+import { Assets, Constr, Credential, Data, Lucid, OutRef, Script, ScriptType, UTxO, fromText } from "https://deno.land/x/lucid@0.10.7/mod.ts"
 import { MAX_LP_CAP } from "./constants.ts";
 import { AssetClassType, PoolDatum, SwapDatum } from "./datum.ts";
 
@@ -6,6 +6,7 @@ import poolValidator from "./scripts/pool.json" with { type: "json" };
 import swapValidator from "./scripts/swap.json" with { type: "json" };
 import depositValidator from "./scripts/deposit.json" with { type: "json" };
 import redeemValidator from "./scripts/redeem.json" with { type: "json" };
+import { Address, BaseAddress } from "https://deno.land/x/lucid@0.10.7/src/core/libs/cardano_multiplatform_lib/cardano_multiplatform_lib.generated.js";
 
 export const poolValidatorScript = {
     type: "PlutusV2" as ScriptType,
@@ -29,10 +30,31 @@ export const redeemValidatorScript = {
 
 export type PoolTokenSet = { [key: string]: bigint };
 
-export const poolValidatorAddress = (lucid: Lucid) => lucid.utils.validatorToAddress(poolValidatorScript);
-export const swapValidatorAddress = (lucid: Lucid) => lucid.utils.validatorToAddress(swapValidatorScript);
+export const poolValidatorAddress = (lucid: Lucid, stakingCreds: Credential) => {
+    const validatorAddr = lucid.utils.validatorToAddress(poolValidatorScript);
+    const validatorAddrDetails = lucid.utils.getAddressDetails(validatorAddr);
+    return lucid.utils.credentialToAddress(validatorAddrDetails.paymentCredential!, stakingCreds);
+};
 
-export const createAdaPool = async (
+export const swapValidatorAddress =  (lucid: Lucid, stakingCreds: Credential) => {
+    const validatorAddr = lucid.utils.validatorToAddress(swapValidatorScript);
+    const validatorAddrDetails = lucid.utils.getAddressDetails(validatorAddr);
+    return lucid.utils.credentialToAddress(validatorAddrDetails.paymentCredential!, stakingCreds);
+};
+
+export const depositValidatorAddress = (lucid: Lucid, stakingCreds: Credential) => {
+    const validatorAddr = lucid.utils.validatorToAddress(depositValidatorScript);
+    const validatorAddrDetails = lucid.utils.getAddressDetails(validatorAddr);
+    return lucid.utils.credentialToAddress(validatorAddrDetails.paymentCredential!, stakingCreds);
+};
+
+export const redeemValidatorAddress = (lucid: Lucid, stakingCreds: Credential) => {
+    const validatorAddr = lucid.utils.validatorToAddress(redeemValidatorScript);
+    const validatorAddrDetails = lucid.utils.getAddressDetails(validatorAddr);
+    return lucid.utils.credentialToAddress(validatorAddrDetails.paymentCredential!, stakingCreds);
+};
+
+export const createAdaPoolAsync = async (
     lucid: Lucid,
     poolTokenSet: PoolTokenSet,
     rewardAddr: string,
@@ -40,8 +62,9 @@ export const createAdaPool = async (
     stakeAdminPolicyId: string,
     waitTx = true,
 ) => {
-    const nativeTokenAmountInPool = 1000000000000n;
+    const nativeTokenAmountInPool = 1000000000n;
     const adaAmountInPool = 1000000000n;
+    const lqInPool = 1000n;
 
     const utxos = await lucid.wallet.getUtxos();
     const rewardAssets: Assets = {};
@@ -49,7 +72,9 @@ export const createAdaPool = async (
         .collectFrom(utxos);
 
     const extractedTokenSet = extractTokenInfo(poolTokenSet);
+
     console.log({ extractedTokenSet });
+
     const poolDatum: PoolDatum = {
         poolNft: [extractedTokenSet.lp.policyId, fromText(extractedTokenSet.identity.tokenName)],
         poolX: ["", ""],
@@ -68,7 +93,7 @@ export const createAdaPool = async (
         ["lovelace"]: adaAmountInPool,
         [poolDatum.poolY.join("")]: nativeTokenAmountInPool,
         [poolDatum.poolNft.join("")]: 1n,
-        [poolDatum.poolLq.join("")]: MAX_LP_CAP - nativeTokenAmountInPool,
+        [poolDatum.poolLq.join("")]: MAX_LP_CAP - lqInPool,
     };
 
     console.log("Pool Assets", poolAssets);
@@ -78,7 +103,7 @@ export const createAdaPool = async (
         inline: Data.to<PoolDatum>(poolDatum, PoolDatum),
     }, poolAssets);
 
-    rewardAssets[poolDatum.poolLq.join("").toLowerCase()] = nativeTokenAmountInPool;
+    rewardAssets[poolDatum.poolLq.join("").toLowerCase()] = lqInPool;
     tx.payToAddress(rewardAddr, rewardAssets);
 
     console.log({ rewardAssets });
@@ -88,9 +113,13 @@ export const createAdaPool = async (
 
     const signedTx = await finalTx.sign().complete();
     const txHash = await signedTx.submit();
+    
+    console.log("Tx Hash", txHash);
 
     if (waitTx)
         await lucid.awaitTx(txHash);
+
+    console.log("Create Pool Confirmed", txHash);
 
     return txHash;
 };
@@ -629,4 +658,32 @@ export const refundSwapOrderAsync = async (lucid: Lucid, swapOrderUtxo: UTxO, sw
     console.log("Refund Swap Order Submitted", txHash);
     await lucid.awaitTx(txHash);
     console.log("Refund Swap Order Confirmed", txHash);
-}
+};
+
+/*
+*
+data PoolRedeemer = PoolRedeemer
+    { action :: PoolAction
+    , selfIx :: Integer
+    }
+    deriving (Haskell.Show, Eq, Haskell.Generic)
+*/
+export const attemptHackPoolAsync = async (lucid: Lucid, poolRefScriptUtxo: UTxO, poolUtxo: UTxO, policy_id: string) => {
+    const redemeer = Data.to(new Constr(0, [4n, 0n]));
+    const tx = await lucid
+        .newTx()
+        .readFrom([poolRefScriptUtxo])
+        .collectFrom([poolUtxo], redemeer)
+        .mintAssets({ [`${policy_id}746e`]: 1n })
+        .complete({
+            nativeUplc: true,
+            coinSelection: false
+        });
+
+    const signedTx = await tx.sign().complete();
+
+    const txHash = await signedTx.submit();
+    console.log("Hack Order Submitted", txHash);
+    await lucid.awaitTx(txHash);
+    console.log("Hack Order Confirmed", txHash);
+};
