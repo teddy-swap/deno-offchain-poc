@@ -7,6 +7,7 @@ import swapValidator from "./scripts/swap.json" with { type: "json" };
 import depositValidator from "./scripts/deposit.json" with { type: "json" };
 import redeemValidator from "./scripts/redeem.json" with { type: "json" };
 import { Address, BaseAddress } from "https://deno.land/x/lucid@0.10.7/src/core/libs/cardano_multiplatform_lib/cardano_multiplatform_lib.generated.js";
+import { config } from "https://deno.land/x/dotenv@v3.2.2/mod.ts";
 
 export const poolValidatorScript = {
     type: "PlutusV2" as ScriptType,
@@ -63,7 +64,7 @@ export const createAdaPoolAsync = async (
     waitTx = true,
 ) => {
     const nativeTokenAmountInPool = 1000000000n;
-    const adaAmountInPool = 1000000000n;
+    const adaAmountInPool = 10000000;
     const lqInPool = 1000n;
 
     const utxos = await lucid.wallet.getUtxos();
@@ -90,7 +91,7 @@ export const createAdaPoolAsync = async (
     console.log("Pool Datum Cbor", Data.to<PoolDatum>(poolDatum, PoolDatum));
 
     const poolAssets: Assets = {
-        ["lovelace"]: adaAmountInPool,
+        ["lovelace"]: BigInt(adaAmountInPool),
         [poolDatum.poolY.join("")]: nativeTokenAmountInPool,
         [poolDatum.poolNft.join("")]: 1n,
         [poolDatum.poolLq.join("")]: MAX_LP_CAP - lqInPool,
@@ -249,47 +250,50 @@ export const findPoolUtxo = async (
     unit: string,
     lucid: Lucid,
 ): Promise<UTxO> => {
-    const rawUtxosReq = await fetch('https://preview.koios.rest/api/v1/address_utxos', {
-        method: 'POST',
+    const env = config();
+    const rawUtxosReq = await fetch(`${env['API_ENDPOINT']}/addresses/${poolAddr}/utxos`, {
         headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-            "_addresses": [
-                poolAddr
-            ],
-            "_extended": true
-        })
-    });
-    const rawUtxos = await rawUtxosReq.json();
-    const poolRawUtxo = rawUtxos.filter((utxo: any) => utxo.asset_list.filter((v: any) => unit.startsWith(v.policy_id) && unit.endsWith(v.asset_name)).length > 0)[0];
-    const assets: any = {};
-    poolRawUtxo.asset_list.forEach((v: any) => {
-        const unit = v.policy_id + v.asset_name;
-        const assetName = unit === "" ? "lovelace" : unit;
-        const quantity = BigInt(v.quantity);
-    
-        // Check if the asset already exists in the object, and aggregate the quantities
-        if (assets[assetName]) {
-            assets[assetName] += quantity;
-        } else {
-            assets[assetName] = quantity;
+            'project_id': env['BLOCKFROST_API_KEY']
         }
     });
+    const rawUtxos = await rawUtxosReq.json();
+    console.log("Raw Utxos", rawUtxos);
 
-    assets["lovelace"] = BigInt(poolRawUtxo.value);
-    
-    return {
-        txHash: poolRawUtxo.tx_hash,
-        outputIndex: poolRawUtxo.tx_index,
-        address: poolRawUtxo.address,
-        datum: poolRawUtxo.inline_datum.bytes,
-        assets
-    } as UTxO;
+    // Find the first UTXO that contains the specified unit
+    const poolRawUtxo = rawUtxos.find((utxo: any) => utxo.amount.some((v: any) => {
+        const fullUnit = v.unit.startsWith('lovelace') ? 'lovelace' : v.unit;
+        return unit === fullUnit;
+    }));
+
+    const assets = {} as any;
+
+    if (poolRawUtxo) {
+        poolRawUtxo.amount.forEach((v: any) => {
+            const assetUnit = v.unit.startsWith('lovelace') ? 'lovelace' : v.unit;
+            const quantity = BigInt(v.quantity);
+
+            // Aggregate the quantities of each asset
+            if (assets[assetUnit]) {
+                assets[assetUnit] += quantity;
+            } else {
+                assets[assetUnit] = quantity;
+            }
+        });
+
+        return {
+            txHash: poolRawUtxo.tx_hash,
+            outputIndex: poolRawUtxo.output_index,
+            address: poolRawUtxo.address,
+            datum: poolRawUtxo.inline_datum ? poolRawUtxo.inline_datum : null,
+            assets
+        } as UTxO;
+    } else {
+        throw new Error('No UTXO found for the given unit.');
+    }
 };
 
-export const createScriptReferenceAsync = async (lucid: Lucid, validatorScript: Script) => {
-    const scriptAddr = lucid.utils.validatorToAddress(validatorScript);
+export const createScriptReferenceAsync = async (lucid: Lucid, validatorScript: Script, stakeCredential: Credential) => {
+    const scriptAddr = lucid.utils.validatorToAddress(validatorScript, stakeCredential);
     console.log("Creating Script Reference", scriptAddr);
 
     const tx = await lucid.newTx()
@@ -687,3 +691,15 @@ export const attemptHackPoolAsync = async (lucid: Lucid, poolRefScriptUtxo: UTxO
     await lucid.awaitTx(txHash);
     console.log("Hack Order Confirmed", txHash);
 };
+
+export const sendTokenAsync = async (lucid: Lucid, unit: string, amount: bigint, toAddress: string) => {
+    const tx = await lucid.newTx()
+        .payToAddress(toAddress, { [unit]: amount })
+        .complete();
+
+    const signedTx = await tx.sign().complete();
+    const txHash = await signedTx.submit();
+    console.log("Send Token Submitted", txHash);
+    await lucid.awaitTx(txHash);
+    console.log("Send Token Confirmed", txHash);
+}
