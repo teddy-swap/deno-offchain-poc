@@ -16,6 +16,22 @@ export const createMintPolicyWithAddress = (lucid: Lucid, minterAddress: string)
     );
 }
 
+export const createMintPolicyWithAddressLockedBefore = (lucid: Lucid, minterAddress: string, before: number) => {
+    const { paymentCredential } = lucid.utils.getAddressDetails(
+        minterAddress,
+    );
+
+    return lucid.utils.nativeScriptFromJson(
+        {
+            type: "all",
+            scripts: [
+                { type: "sig", keyHash: paymentCredential?.hash },
+                { type: "before", slot: before }
+            ]
+        },
+    );
+}
+
 export const getPolicyId = (lucid: Lucid, mintPolicy: Script) => {
     return lucid.utils.mintingPolicyToId(mintPolicy);
 }

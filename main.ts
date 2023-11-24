@@ -1,15 +1,16 @@
 // deno-lint-ignore-file no-explicit-any
 import { Blockfrost, Lucid, Network, OutRef, UTxO, fromText } from "https://deno.land/x/lucid@0.10.7/mod.ts"
 import { config } from "https://deno.land/x/dotenv@v3.2.2/mod.ts";
-import { burnAdaPoolTokenSetAsync, createMintPolicyWithAddress, getPolicyId, mintAdaPoolTokenSetAsync } from "./asset.ts";
-import { PoolTokenSet, attemptHackPoolAsync, createAdaPoolAsync, createScriptReferenceAsync, createSwapOrder, depositValidatorAddress, depositValidatorScript, executeSwapOrderAsync, extractTokenInfo, findPoolData, poolValidatorAddress, poolValidatorScript, redeemValidatorAddress, redeemValidatorScript, refundSwapOrderAsync, sendTokenAsync, submitSwapOrderAsync, swapValidatorAddress, swapValidatorScript } from "./validator.ts";
+import { burnAdaPoolTokenSetAsync, createMintPolicyWithAddress, createMintPolicyWithAddressLockedBefore, getPolicyId, mintAdaPoolTokenSetAsync } from "./asset.ts";
+import { PoolTokenSet, attemptHackPoolAsync, createAdaPoolAsync, createScriptReferenceAsync, createSwapOrder, depositValidatorAddress, depositValidatorScript, executeSwapOrderAsync, extractTokenInfo, findPoolData, mintTokenAsync, poolValidatorAddress, poolValidatorScript, redeemValidatorAddress, redeemValidatorScript, refundSwapOrderAsync, sendTokenAsync, submitSwapOrderAsync, swapValidatorAddress, swapValidatorScript } from "./validator.ts";
+import { MAX_LP_CAP } from "./constants.ts";
 
 const env = config();
 
 const apiKey = env["BLOCKFROST_API_KEY"];
 const walletSeed = env["WALLET_SEED"];
 const network: Network = env["CARDANO_NETWORK"] as Network;
-const apiEndpoint = env["API_ENDPOINT"]; 
+const apiEndpoint = env["API_ENDPOINT"];
 
 if (!apiKey) {
   throw new Error("BLOCKFROST_API_KEY environment variable not set");
@@ -63,6 +64,38 @@ console.log(JSON.stringify({ changeAddr, poolAddr, swapAddr, depositAddr, redeem
 
 if (Deno.args.includes("--address")) {
   console.log(changeAddr);
+}
+
+if (Deno.args.includes("--slot")) {
+  console.log(lucid.currentSlot());
+}
+
+if (Deno.args.includes("--mint-unlocked-before")) {
+  const token = Deno.args[Deno.args.indexOf("--mint-unlocked-before") + 1];
+  const amount = BigInt(Deno.args[Deno.args.indexOf("--mint-unlocked-before") + 2]);
+  const before = parseInt(Deno.args[Deno.args.indexOf("--mint-unlocked-before") + 3]);
+  console.log(`Minting ${amount} ${token} with unlocked before ${before}`);
+  const mintPolicy = createMintPolicyWithAddressLockedBefore(lucid, changeAddr, before);
+  const policyId = lucid.utils.mintingPolicyToId(mintPolicy);
+  const unit = policyId + fromText(token);
+  await mintTokenAsync(lucid, mintPolicy, unit, amount);
+}
+
+// Mint LP Tokens
+// Optional can provide slot to lock the LP tokens
+if (Deno.args.includes("--mint-lp")) {
+  const token = Deno.args[Deno.args.indexOf("--mint-lp") + 1];
+  const amount = MAX_LP_CAP;
+
+  const slot = Deno.args.includes("--mint-lp")
+    ? parseInt(Deno.args[Deno.args.indexOf("--mint-lp") + 2])
+    : lucid.currentSlot() + 300;
+
+  console.log(`Minting LP: ${amount} ${token} with unlocked before ${slot}`);
+  const mintPolicy = createMintPolicyWithAddressLockedBefore(lucid, changeAddr, slot);
+  const policyId = lucid.utils.mintingPolicyToId(mintPolicy);
+  const unit = policyId + fromText(token);
+  await mintTokenAsync(lucid, mintPolicy, unit, amount);
 }
 
 if (Deno.args.includes("--mint-pool-token")) {
@@ -127,10 +160,14 @@ if (Deno.args.includes("--create-redeem-reference")) {
 
 if (Deno.args.includes("--create-pool")) {
   const token = Deno.args[Deno.args.indexOf("--create-pool") + 1];
+
+  const adaAmount = BigInt(Deno.args[Deno.args.indexOf("--create-pool") + 2]);
+  const tokenAmount = BigInt(Deno.args[Deno.args.indexOf("--create-pool") + 3]);
+
   console.log(`Creating ${token} Pool`);
   const data = await Deno.readFile(`pools/${token}_pool.json`);
   const poolTokenSet = fromJson(new TextDecoder().decode(data));
-  const txHash = await createAdaPoolAsync(lucid, poolTokenSet, changeAddr, poolAddr, adminPolicyId);
+  const txHash = await createAdaPoolAsync(lucid, poolTokenSet, changeAddr, poolAddr, adminPolicyId, adaAmount, tokenAmount);
   console.log(`Created ${token} Pool`, txHash);
 }
 
@@ -241,13 +278,10 @@ if (Deno.args.includes("--hack-pool")) {
 
 // Send Token to Address
 if (Deno.args.includes("--send")) {
-  const token = Deno.args[Deno.args.indexOf("--send") + 1];
+  const unit = Deno.args[Deno.args.indexOf("--send") + 1];
   const address = Deno.args[Deno.args.indexOf("--send") + 2];
   const amount = BigInt(Deno.args[Deno.args.indexOf("--send") + 3]);
-  console.log(`Sending ${amount} ${token} to ${address}`);
-  const data = await Deno.readFile(`pools/${token}_pool.json`);
-  const poolTokenSet = fromJson(new TextDecoder().decode(data)) as PoolTokenSet;
-  const poolTokenInfo = extractTokenInfo(poolTokenSet);
+  console.log(`Sending ${amount} ${unit} to ${address}`);
 
-  await sendTokenAsync(lucid, poolTokenInfo.native.policyId + fromText(poolTokenInfo.native.tokenName), amount, address);
+  await sendTokenAsync(lucid, unit, amount, address);
 }

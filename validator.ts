@@ -6,7 +6,6 @@ import poolValidator from "./scripts/pool.json" with { type: "json" };
 import swapValidator from "./scripts/swap.json" with { type: "json" };
 import depositValidator from "./scripts/deposit.json" with { type: "json" };
 import redeemValidator from "./scripts/redeem.json" with { type: "json" };
-import { Address, BaseAddress } from "https://deno.land/x/lucid@0.10.7/src/core/libs/cardano_multiplatform_lib/cardano_multiplatform_lib.generated.js";
 import { config } from "https://deno.land/x/dotenv@v3.2.2/mod.ts";
 
 export const poolValidatorScript = {
@@ -61,10 +60,10 @@ export const createAdaPoolAsync = async (
     rewardAddr: string,
     poolAddr: string,
     stakeAdminPolicyId: string,
-    waitTx = true,
+    adaAmountInPool: bigint,
+    tokenAmountInPool: bigint,
 ) => {
-    const nativeTokenAmountInPool = 1000000000n;
-    const adaAmountInPool = 10000000;
+    const nativeTokenAmountInPool = tokenAmountInPool;
     const lqInPool = 1000n;
 
     const utxos = await lucid.wallet.getUtxos();
@@ -77,11 +76,11 @@ export const createAdaPoolAsync = async (
     console.log({ extractedTokenSet });
 
     const poolDatum: PoolDatum = {
-        poolNft: [extractedTokenSet.lp.policyId, fromText(extractedTokenSet.identity.tokenName)],
+        poolNft: [extractedTokenSet.identity.policyId, fromText(extractedTokenSet.identity.tokenName)],
         poolX: ["", ""],
         poolY: [extractedTokenSet.native.policyId, fromText(extractedTokenSet.native.tokenName)],
         poolLq: [extractedTokenSet.lp.policyId, fromText(extractedTokenSet.lp.tokenName)],
-        feeNum: 995n,
+        feeNum: 997n,
         stakeAdminPolicy: [stakeAdminPolicyId],
         lqBound: 0n
     };
@@ -117,8 +116,7 @@ export const createAdaPoolAsync = async (
     
     console.log("Tx Hash", txHash);
 
-    if (waitTx)
-        await lucid.awaitTx(txHash);
+    await lucid.awaitTx(txHash);
 
     console.log("Create Pool Confirmed", txHash);
 
@@ -693,6 +691,8 @@ export const attemptHackPoolAsync = async (lucid: Lucid, poolRefScriptUtxo: UTxO
 };
 
 export const sendTokenAsync = async (lucid: Lucid, unit: string, amount: bigint, toAddress: string) => {
+    const utxos = await lucid.wallet.getUtxos();
+    console.log("Send Token Utxos", utxos);
     const tx = await lucid.newTx()
         .payToAddress(toAddress, { [unit]: amount })
         .complete();
@@ -702,4 +702,20 @@ export const sendTokenAsync = async (lucid: Lucid, unit: string, amount: bigint,
     console.log("Send Token Submitted", txHash);
     await lucid.awaitTx(txHash);
     console.log("Send Token Confirmed", txHash);
+}
+
+export const mintTokenAsync = async (lucid: Lucid, mintPolicy: Script, unit: string, amount: bigint) => {
+    const tx = await lucid.newTx()
+        .mintAssets({ [unit]: amount })
+        .validTo(Date.now() + 200000)
+        .attachMintingPolicy(mintPolicy)
+        .complete();
+
+    const signedTx = await tx.sign().complete();
+
+    const txHash = await signedTx.submit();
+    console.log("Mint Token Submitted", txHash);
+    await lucid.awaitTx(txHash);
+    console.log("Mint Token Confirmed", txHash);
+    return txHash;
 }
