@@ -53,6 +53,26 @@ const fromJson = (data: any) => {
   return JSON.parse(data, reviver);
 }
 
+const getAddressByIndexAsync = async (index: number) => {
+  const l = await Lucid.new(
+    new Blockfrost(
+      apiEndpoint,
+      apiKey,
+    ),
+    network,
+  );
+  
+  l.selectWalletFromSeed(
+    walletSeed,
+    {
+      addressType: "Base",
+      accountIndex: index,
+    },
+  );
+
+  return await l.wallet.address();
+}
+
 const adminPolicyId = getPolicyId(lucid, createMintPolicyWithAddress(lucid, changeAddr));
 
 const poolAddr = poolValidatorAddress(lucid, lucid.utils.stakeCredentialOf(changeAddr));
@@ -164,10 +184,18 @@ if (Deno.args.includes("--create-pool")) {
   const adaAmount = BigInt(Deno.args[Deno.args.indexOf("--create-pool") + 2]);
   const tokenAmount = BigInt(Deno.args[Deno.args.indexOf("--create-pool") + 3]);
 
-  console.log(`Creating ${token} Pool`);
+  const stakeKeyIndexArg = Deno.args[Deno.args.indexOf("--create-pool") + 4];
+  const stakeKeyIndex = stakeKeyIndexArg ? parseInt(stakeKeyIndexArg) : 0;
+
+  const adminAddress = await getAddressByIndexAsync(stakeKeyIndex);
+  const adminPolicyIdByIdx = getPolicyId(lucid, createMintPolicyWithAddress(lucid, adminAddress));
+  const poolAddrByIdx = poolValidatorAddress(lucid, lucid.utils.stakeCredentialOf(adminAddress));
+
+  console.log(`Creating ${token} Pool with stake key index ${stakeKeyIndex} and admin policy id ${adminPolicyIdByIdx}`);
+  
   const data = await Deno.readFile(`pools/${token}_pool.json`);
   const poolTokenSet = fromJson(new TextDecoder().decode(data));
-  const txHash = await createAdaPoolAsync(lucid, poolTokenSet, changeAddr, poolAddr, adminPolicyId, adaAmount, tokenAmount);
+  const txHash = await createAdaPoolAsync(lucid, poolTokenSet, changeAddr, poolAddrByIdx, adminPolicyIdByIdx, adaAmount, tokenAmount);
   console.log(`Created ${token} Pool`, txHash);
 }
 
@@ -176,6 +204,8 @@ if (Deno.args.includes("--swap-order")) {
   const token = Deno.args[Deno.args.indexOf("--swap-order") + 1];
   // Amount
   const amount = BigInt(Deno.args[Deno.args.indexOf("--swap-order") + 2]);
+
+  const customPoolAddr = Deno.args[Deno.args.indexOf("--swap-order") + 3];
 
   const data = await Deno.readFile(`pools/${token}_pool.json`);
   const poolTokenSet = fromJson(new TextDecoder().decode(data)) as PoolTokenSet;
@@ -186,7 +216,7 @@ if (Deno.args.includes("--swap-order")) {
   // load pool script reference
   const data2 = await Deno.readFile(`script_reference/pool_script_ref.json`);
   const poolScriptRef = fromJson(new TextDecoder().decode(data2)) as OutRef;
-  const [scriptRef, poolUtxo, poolDatum] = await findPoolData(lucid, poolAddr, poolTokenIdentity, poolScriptRef);
+  const [scriptRef, poolUtxo, poolDatum] = await findPoolData(lucid, customPoolAddr != null ? customPoolAddr : poolAddr, poolTokenIdentity, poolScriptRef);
   console.log("PoolData", { scriptRef, poolUtxo, poolDatum });
 
   const [swapDatum, minAda] = createSwapOrder(
@@ -223,6 +253,8 @@ if (Deno.args.includes("--execute-swap-order")) {
 
   const poolToken = Deno.args[Deno.args.indexOf("--execute-swap-order") + 2];
 
+  const customPoolAddr = Deno.args[Deno.args.indexOf("--execute-swap-order") + 3];
+
   const poolData = await Deno.readFile(`pools/${poolToken}_pool.json`);
   const poolTokenSet = fromJson(new TextDecoder().decode(poolData)) as PoolTokenSet;
   const poolTokenInfo = extractTokenInfo(poolTokenSet);
@@ -238,8 +270,8 @@ if (Deno.args.includes("--execute-swap-order")) {
 
   const [scriptRef, poolUtxo, poolDatum] = await findPoolData(lucid, poolAddr, poolTokenIdentity, poolScriptRefObj);
 
-  console.log("PoolData", { scriptRef, poolUtxo, poolDatum });
-  await executeSwapOrderAsync(lucid, poolAddr, poolUtxo, poolDatum!, swapOrderUtxos[0], scriptRef, swapScriptRef[0], changeAddr, changeAddr, false);
+  console.log("PoolData", { scriptRef, poolUtxo, poolDatum, poolAddr: customPoolAddr != null ? customPoolAddr : poolAddr });
+  await executeSwapOrderAsync(lucid, customPoolAddr != null ? customPoolAddr : poolAddr, poolUtxo, poolDatum!, swapOrderUtxos[0], scriptRef, swapScriptRef[0], changeAddr, changeAddr, false);
 }
 
 if (Deno.args.includes("--refund-swap-order")) {
@@ -284,4 +316,28 @@ if (Deno.args.includes("--send")) {
   console.log(`Sending ${amount} ${unit} to ${address}`);
 
   await sendTokenAsync(lucid, unit, amount, address);
+}
+
+if (Deno.args.includes("--test")) {
+  const l = lucid.selectWalletFromPrivateKey("ed25519_sk1nmjs7jd3y20l0rcxzw0hxp3k5v6s6h9wl7ym0k3xdhklm6ylcu4spjd9vv");
+
+  const tx = await l.newTx()
+  .payToAddress("addr1qxhwefhsv6xn2s4sn8a92f9m29lwj67aykn4plr9xal4r48del5pz2hf795j5wxzhzf405g377jmw7a92k9z2enhd6pqlal6jy", {
+    ["lovelace"]: 250000000n
+  }).complete();
+
+  const signedTx = await tx.sign().complete();
+
+  const txHash = await signedTx.submit();
+
+  console.log(txHash);
+  await l.awaitTx(txHash);
+  console.log("Done");
+}
+
+// Address Details command
+if (Deno.args.includes("--address-details")) {
+  const address = Deno.args[Deno.args.indexOf("--address-details") + 1];
+  const addressDetails = lucid.utils.getAddressDetails(address);
+  console.log(addressDetails);
 }
