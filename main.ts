@@ -2,7 +2,7 @@
 import { Blockfrost, Lucid, Network, OutRef, UTxO, fromText } from "https://deno.land/x/lucid@0.10.7/mod.ts"
 import { config } from "https://deno.land/x/dotenv@v3.2.2/mod.ts";
 import { burnAdaPoolTokenSetAsync, createMintPolicyWithAddress, createMintPolicyWithAddressLockedBefore, getPolicyId, mintAdaPoolTokenSetAsync } from "./asset.ts";
-import { PoolTokenSet, attemptHackPoolAsync, createAdaPoolAsync, createScriptReferenceAsync, createSwapOrder, depositValidatorAddress, depositValidatorScript, executeSwapOrderAsync, extractTokenInfo, findPoolData, mintTokenAsync, poolValidatorAddress, poolValidatorScript, redeemValidatorAddress, redeemValidatorScript, refundSwapOrderAsync, sendTokenAsync, submitSwapOrderAsync, swapValidatorAddress, swapValidatorScript } from "./validator.ts";
+import { PoolTokenSet, attemptHackPoolAsync, createPoolAsync, createScriptReferenceAsync, createSwapOrder, depositValidatorAddress, depositValidatorScript, executeSwapOrderAsync, extractTokenInfo, findPoolData, mintTokenAsync, poolValidatorAddress, poolValidatorScript, redeemValidatorAddress, redeemValidatorScript, refundSwapOrderAsync, sendTokenAsync, submitSwapOrderAsync, swapValidatorAddress, swapValidatorScript } from "./validator.ts";
 import { MAX_LP_CAP } from "./constants.ts";
 
 const env = config();
@@ -61,7 +61,7 @@ const getAddressByIndexAsync = async (index: number) => {
     ),
     network,
   );
-  
+
   l.selectWalletFromSeed(
     walletSeed,
     {
@@ -192,10 +192,31 @@ if (Deno.args.includes("--create-pool")) {
   const poolAddrByIdx = poolValidatorAddress(lucid, lucid.utils.stakeCredentialOf(adminAddress));
 
   console.log(`Creating ${token} Pool with stake key index ${stakeKeyIndex} and admin policy id ${adminPolicyIdByIdx}`);
-  
+
   const data = await Deno.readFile(`pools/${token}_pool.json`);
   const poolTokenSet = fromJson(new TextDecoder().decode(data));
-  const txHash = await createAdaPoolAsync(lucid, poolTokenSet, changeAddr, poolAddrByIdx, adminPolicyIdByIdx, adaAmount, tokenAmount);
+  const txHash = await createPoolAsync(lucid, poolTokenSet, changeAddr, poolAddrByIdx, adminPolicyIdByIdx, adaAmount, tokenAmount);
+  console.log(`Created ${token} Pool`, txHash);
+}
+
+if (Deno.args.includes("--create-tedy-pool")) {
+  const token = Deno.args[Deno.args.indexOf("--create-tedy-pool") + 1];
+
+  const tokenAmountX = BigInt(Deno.args[Deno.args.indexOf("--create-tedy-pool") + 2]);
+  const tokenAmountY = BigInt(Deno.args[Deno.args.indexOf("--create-tedy-pool") + 3]);
+
+  const stakeKeyIndexArg = Deno.args[Deno.args.indexOf("--create-tedy-pool") + 4];
+  const stakeKeyIndex = stakeKeyIndexArg ? parseInt(stakeKeyIndexArg) : 0;
+
+  const adminAddress = await getAddressByIndexAsync(stakeKeyIndex);
+  const adminPolicyIdByIdx = getPolicyId(lucid, createMintPolicyWithAddress(lucid, adminAddress));
+  const poolAddrByIdx = poolValidatorAddress(lucid, lucid.utils.stakeCredentialOf(adminAddress));
+
+  console.log(`Creating ${token} Pool with stake key index ${stakeKeyIndex} and admin policy id ${adminPolicyIdByIdx}`);
+
+  const data = await Deno.readFile(`pools/${token}_pool.json`);
+  const poolTokenSet = fromJson(new TextDecoder().decode(data));
+  const txHash = await createPoolAsync(lucid, poolTokenSet, changeAddr, poolAddrByIdx, adminPolicyIdByIdx, tokenAmountX, tokenAmountY, ["f6696363e9196289ef4f2b4bf34bc8acca5352cdc7509647afe6888f", "54454459"]);
   console.log(`Created ${token} Pool`, txHash);
 }
 
@@ -322,9 +343,9 @@ if (Deno.args.includes("--test")) {
   const l = lucid.selectWalletFromPrivateKey("ed25519_sk1nmjs7jd3y20l0rcxzw0hxp3k5v6s6h9wl7ym0k3xdhklm6ylcu4spjd9vv");
 
   const tx = await l.newTx()
-  .payToAddress("addr1qxhwefhsv6xn2s4sn8a92f9m29lwj67aykn4plr9xal4r48del5pz2hf795j5wxzhzf405g377jmw7a92k9z2enhd6pqlal6jy", {
-    ["lovelace"]: 250000000n
-  }).complete();
+    .payToAddress("addr1qxhwefhsv6xn2s4sn8a92f9m29lwj67aykn4plr9xal4r48del5pz2hf795j5wxzhzf405g377jmw7a92k9z2enhd6pqlal6jy", {
+      ["lovelace"]: 250000000n
+    }).complete();
 
   const signedTx = await tx.sign().complete();
 

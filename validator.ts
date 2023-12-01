@@ -36,7 +36,7 @@ export const poolValidatorAddress = (lucid: Lucid, stakingCreds: Credential) => 
     return lucid.utils.credentialToAddress(validatorAddrDetails.paymentCredential!, stakingCreds);
 };
 
-export const swapValidatorAddress =  (lucid: Lucid, stakingCreds: Credential) => {
+export const swapValidatorAddress = (lucid: Lucid, stakingCreds: Credential) => {
     const validatorAddr = lucid.utils.validatorToAddress(swapValidatorScript);
     const validatorAddrDetails = lucid.utils.getAddressDetails(validatorAddr);
     return lucid.utils.credentialToAddress(validatorAddrDetails.paymentCredential!, stakingCreds);
@@ -54,16 +54,16 @@ export const redeemValidatorAddress = (lucid: Lucid, stakingCreds: Credential) =
     return lucid.utils.credentialToAddress(validatorAddrDetails.paymentCredential!, stakingCreds);
 };
 
-export const createAdaPoolAsync = async (
+export const createPoolAsync = async (
     lucid: Lucid,
     poolTokenSet: PoolTokenSet,
     rewardAddr: string,
     poolAddr: string,
     stakeAdminPolicyId: string,
-    adaAmountInPool: bigint,
-    tokenAmountInPool: bigint,
+    tokenAmountXInPool: bigint,
+    tokenAmountYInPool: bigint,
+    baseAsset: [string, string] = ["", ""]
 ) => {
-    const nativeTokenAmountInPool = tokenAmountInPool;
     const lqInPool = 1000n;
 
     const utxos = await lucid.wallet.getUtxos();
@@ -77,7 +77,7 @@ export const createAdaPoolAsync = async (
 
     const poolDatum: PoolDatum = {
         poolNft: [extractedTokenSet.identity.policyId, fromText(extractedTokenSet.identity.tokenName)],
-        poolX: ["", ""],
+        poolX: baseAsset,
         poolY: [extractedTokenSet.native.policyId, fromText(extractedTokenSet.native.tokenName)],
         poolLq: [extractedTokenSet.lp.policyId, fromText(extractedTokenSet.lp.tokenName)],
         feeNum: 997n,
@@ -89,9 +89,15 @@ export const createAdaPoolAsync = async (
 
     console.log("Pool Datum Cbor", Data.to<PoolDatum>(poolDatum, PoolDatum));
 
-    const poolAssets: Assets = {
-        ["lovelace"]: BigInt(adaAmountInPool),
-        [poolDatum.poolY.join("")]: nativeTokenAmountInPool,
+    const poolAssets: Assets = baseAsset[0] !== "" ? {
+        ["lovelace"]: 4000000n,
+        [baseAsset.join("")]: tokenAmountXInPool,
+        [poolDatum.poolY.join("")]: tokenAmountYInPool,
+        [poolDatum.poolNft.join("")]: 1n,
+        [poolDatum.poolLq.join("")]: MAX_LP_CAP - lqInPool,
+    } : {
+        ["lovelace"]: tokenAmountXInPool,
+        [poolDatum.poolY.join("")]: tokenAmountYInPool,
         [poolDatum.poolNft.join("")]: 1n,
         [poolDatum.poolLq.join("")]: MAX_LP_CAP - lqInPool,
     };
@@ -113,7 +119,7 @@ export const createAdaPoolAsync = async (
 
     const signedTx = await finalTx.sign().complete();
     const txHash = await signedTx.submit();
-    
+
     console.log("Tx Hash", txHash);
 
     await lucid.awaitTx(txHash);
